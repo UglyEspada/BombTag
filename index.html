@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BombTag</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #111;
+            --panel-bg: #222;
+            --text-color: #eee;
+            --danger: #ff2a2a;
+            --danger-glow: #ff2a2a88;
+            --success: #2aff2a;
+            --success-glow: #2aff2a88;
+            --menu-btn: #333;
+            --warning: #ffaa00;
+        }
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg-color); color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            display: flex; flex-direction: column; align-items: center;
+            height: 100vh; overflow: hidden; touch-action: manipulation;
+            user-select: none;
+        }
+        
+        /* Screens */
+        .screen {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; flex-direction: column; align-items: center;
+            background: var(--bg-color); z-index: 10;
+            padding: 20px; box-sizing: border-box; overflow-y: auto;
+        }
+        #game-screen { display: none; background: #151515; z-index: 5; padding: 0; overflow: hidden; }
+        #game-over-screen { display: none; z-index: 100; justify-content: center; background: rgba(0,0,0,0.95); }
+
+        /* Menu Elements */
+        .logo { font-size: 48px; font-weight: 900; margin: 40px 0 10px; color: var(--danger); text-shadow: 0 0 15px var(--danger-glow); letter-spacing: 2px; }
+        .subtitle { color: #888; margin-bottom: 50px; text-align: center; }
+        
+        .btn {
+            width: 80%; max-width: 300px; padding: 15px; margin-bottom: 15px;
+            font-size: 18px; font-family: inherit; font-weight: bold;
+            background: var(--menu-btn); color: white;
+            border: 2px solid #444; border-radius: 8px; cursor: pointer;
+            transition: 0.1s; text-transform: uppercase;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-easy { border-color: var(--success); }
+        .btn-medium { border-color: var(--warning); }
+        .btn-hard { border-color: var(--danger); }
+        .btn-action { background: var(--danger); border-color: var(--danger); margin-top: 20px; }
+
+        /* Game UI */
+        #top-bar { width: 100%; display: flex; justify-content: center; background: #0a0a0a; z-index: 50; padding: 10px 0; border-bottom: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.8); }
+        #timer-display {
+            font-size: 48px; color: var(--danger); font-weight: bold;
+            background: #000; padding: 5px 20px; border-radius: 8px;
+            border: 2px solid #333; text-shadow: 0 0 15px var(--danger-glow);
+            transition: color 0.3s;
+        }
+
+        /* Stages Wrapper */
+        #stages-wrapper {
+            width: 100%; flex-grow: 1; position: relative;
+            transition: transform 0.8s cubic-bezier(0.65, 0, 0.35, 1);
+        }
+        .stage {
+            width: 100%; height: 100%; position: absolute; left: 0;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 20px; box-sizing: border-box; overflow-y: auto;
+        }
+        #stage-1 { top: 0; }
+        #stage-2 { top: 100%; background: #0f0f0f; }
+
+        .module {
+            background: var(--panel-bg); width: 100%; max-width: 380px;
+            border-radius: 10px; padding: 15px; margin-bottom: 15px;
+            border: 2px solid #333; box-sizing: border-box; box-shadow: inset 0 0 10px #000;
+        }
+        .module-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #888; margin-bottom: 15px; border-bottom: 1px dashed #444; padding-bottom: 5px; }
+        .status-led { width: 12px; height: 12px; border-radius: 50%; background: #444; }
+        .status-led.on { background: var(--success); box-shadow: 0 0 8px var(--success-glow); }
+
+        /* Keypad (Stage 1) */
+        .task-display { font-size: 14px; text-align: center; margin-bottom: 10px; color: #aaa; }
+        .keypad-display { background: #000; color: #fff; padding: 10px; text-align: center; font-size: 24px; letter-spacing: 10px; margin-bottom: 10px; border-radius: 5px; }
+        .keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .key-btn { background: #333; padding: 10px; font-size: 18px; border-radius: 5px; text-align: center; border: 1px solid #444; }
+        .key-btn:active { background: #555; }
+
+        /* Switches (Stage 1) */
+        .switches-container { display: flex; justify-content: space-around; }
+        .switch { width: 45px; height: 70px; background: #111; border-radius: 5px; position: relative; cursor: pointer; border: 2px solid #333; }
+        .switch-toggle { position: absolute; bottom: 5px; left: 5px; right: 5px; height: 25px; background: #555; border-radius: 3px; transition: 0.15s; }
+        .switch.on .switch-toggle { bottom: 35px; background: var(--success); }
+
+        /* Wires (Stage 1) */
+        #wire-hint { text-align: center; font-size: 14px; color: var(--danger); margin-bottom: 10px; min-height: 16px; }
+        .wires-container { display: flex; justify-content: space-evenly; flex-wrap: wrap; gap: 10px; }
+        .wire { width: 25px; height: 80px; border-radius: 12px; cursor: pointer; box-shadow: inset -5px -5px 10px rgba(0,0,0,0.5), inset 5px 5px 10px rgba(255,255,255,0.2); transition: 0.2s; }
+        .wire.cut { opacity: 0.2; pointer-events: none; transform: scaleY(0.9); }
+
+        /* Simon (Stage 2) */
+        .simon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 200px; margin: 0 auto 15px; }
+        .simon-btn { height: 80px; border-radius: 10px; opacity: 0.5; cursor: pointer; border: 3px solid transparent; transition: opacity 0.1s; }
+        .simon-btn:active { opacity: 1 !important; }
+        .simon-btn.active { opacity: 1 !important; box-shadow: 0 0 20px currentColor; }
+        .simon-controls { text-align: center; }/* Hold Button (Stage 2) */
+        .hold-btn-container { display: flex; flex-direction: column; align-items: center; }
+        #hold-indicator { width: 100%; height: 10px; background: #333; border-radius: 5px; margin-bottom: 15px; overflow: hidden; }
+        #hold-progress { width: 0%; height: 100%; background: var(--warning); transition: width 0.1s linear, background-color 0.2s; }
+        #final-button { 
+            width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, #ff5555 0%, #aa0000 100%);
+            border: 8px solid #333; box-shadow: 0 10px 0 #550000, 0 15px 15px rgba(0,0,0,0.8);
+            cursor: pointer; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold;
+        }
+        #final-button:active { transform: translateY(5px); box-shadow: 0 5px 0 #550000, 0 10px 10px rgba(0,0,0,0.8); }
+
+        /* Effects */
+        .shake { animation: shake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+            40%, 60% { transform: translate3d(8px, 0, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="menu-screen" class="screen">
+        <div class="logo">BombTag</div>
+        <div class="subtitle">Обезвредь или умри</div>
+        <button class="btn btn-easy" onclick="initGame('easy')">ЛЕГКО (60 сек)</button>
+        <button class="btn btn-medium" onclick="initGame('medium')">СРЕДНЕ (45 сек)</button>
+        <button class="btn btn-hard" onclick="initGame('hard')">ХАРДКОР (30 сек)</button>
+    </div>
+
+    <div id="game-over-screen" class="screen">
+        <h1 id="result-title" style="font-size: 48px; margin-bottom: 10px;">ВЗРЫВ!</h1>
+        <p id="result-desc" style="color: #aaa; margin-bottom: 30px;">Вы не успели...</p>
+        <button class="btn btn-action" onclick="showMenu()">В ГЛАВНОЕ МЕНЮ</button>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <div id="top-bar">
+            <div id="timer-display">00.00</div>
+        </div>
+
+        <div id="stages-wrapper">
+            <div id="stage-1" class="stage">
+                <div class="module" id="mod-code">
+                    <div class="module-header"><span>МОДУЛЬ 1: ДЕШИФРАТОР</span><div class="status-led" id="led-code"></div></div>
+                    <div class="task-display" id="math-task">Уравнение: загрузка...</div>
+                    <div class="keypad-display" id="keypad-screen">---</div>
+                    <div class="keypad-grid">
+                        <div class="key-btn" onclick="pressKey(1)">1</div><div class="key-btn" onclick="pressKey(2)">2</div><div class="key-btn" onclick="pressKey(3)">3</div>
+                        <div class="key-btn" onclick="pressKey(4)">4</div><div class="key-btn" onclick="pressKey(5)">5</div><div class="key-btn" onclick="pressKey(6)">6</div>
+                        <div class="key-btn" onclick="pressKey(7)">7</div><div class="key-btn" onclick="pressKey(8)">8</div><div class="key-btn" onclick="pressKey(9)">9</div>
+                        <div class="key-btn" style="background: #522;" onclick="clearKeypad()">СБРОС</div><div class="key-btn" onclick="pressKey(0)">0</div><div class="key-btn" style="background: #522;" onclick="penaltyTime(5)">?</div>
+                    </div>
+                </div>
+                <div class="module" id="mod-switches">
+                    <div class="module-header"><span>МОДУЛЬ 2: ПИТАНИЕ</span><div class="status-led" id="led-switches"></div></div>
+                    <div class="switches-container" id="switches-container"></div>
+                </div>
+                <div class="module">
+                    <div class="module-header"><span>МОДУЛЬ 3: ПРОВОДКА</span><div class="status-led" id="led-wires"></div></div>
+                    <div id="wire-hint">СИСТЕМА ЗАБЛОКИРОВАНА</div>
+                    <div class="wires-container" id="wires-container"></div>
+                </div>
+            </div>
+
+            <div id="stage-2" class="stage">
+                <div style="color:var(--success); font-weight:bold; margin-bottom:10px;">ВТОРОЙ УРОВЕНЬ ЗАЩИТЫ</div>
+                
+                <div class="module" id="mod-simon">
+                    <div class="module-header"><span>МОДУЛЬ 4: ПАМЯТЬ</span><div class="status-led" id="led-simon"></div></div>
+                    <div class="simon-grid">
+                        <div class="simon-btn" id="sm-0" style="background: #ff2a2a; color: #ff2a2a;" onclick="pressSimon(0)"></div>
+                        <div class="simon-btn" id="sm-1" style="background: #2a2aff; color: #2a2aff;" onclick="pressSimon(1)"></div>
+                        <div class="simon-btn" id="sm-2" style="background: #2aff2a; color: #2aff2a;" onclick="pressSimon(2)"></div>
+                        <div class="simon-btn" id="sm-3" style="background: #ffff2a; color: #ffff2a;" onclick="pressSimon(3)"></div>
+                    </div>
+                    <div class="simon-controls">
+                        <button class="btn" id="btn-play-simon" style="font-size: 14px; padding: 10px;" onclick="playSimonSequence()">СЛУШАТЬ КОД</button>
+                    </div>
+                </div>
+
+                <div class="module" id="mod-final">
+                    <div class="module-header"><span>МОДУЛЬ 5: ДЕТОНАТОР</span><div class="status-led" id="led-final"></div></div>
+                    <div class="task-display">УДЕРЖИВАЙ И ОТПУСТИ НА ЗЕЛЕНЫЙ</div>
+                    <div class="hold-btn-container">
+                        <div id="hold-indicator"><div id="hold-progress"></div></div>
+                        <button id="final-button">HOLD</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const config = {
+            easy: { time: 60, wires: 3, mathMax: 50, simonSteps: 3 },
+            medium: { time: 45, wires: 4, mathMax: 100, simonSteps: 4 },
+            hard: { time: 30, wires: 5, mathMax: 200, simonSteps: 5 }
+        };
+
+        const wireColors = [
+            { id: 'red', color: '#ff1a1a', name: 'КРАСНЫЙ' },
+            { id: 'blue', color: '#1a53ff', name: 'СИНИЙ' },
+            { id: 'green', color: '#1aff1a', name: 'ЗЕЛЕНЫЙ' },
+            { id: 'yellow', color: '#ffff1a', name: 'ЖЕЛТЫЙ' },
+            { id: 'purple', color: '#cc00cc', name: 'ФИОЛЕТОВЫЙ' }
+        ];
+
+        let timeLeft, timerInterval, isActive = false, audioCtx;
+        let currentDiff, currentStage = 1;
+        
+        // Stage 1
+        let targetCode, currentCode = "", codeSolved = false;
+        let switchSequence = [], currentSwitchStep = 0, switchesSolved = false;
+        let activeWires = [], safeWireId = "", wiresSolved = false;
+
+        // Stage 2
+        let simonSequence = [], simonPlayerStep = 0, isSimonPlaying = false, simonSolved = false;
+        let finalSolved = false;
+        let holdTimer = null, holdValue = 0, isHolding = false;
+
+        // --- AUDIO ENGINE ---
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playTone(freq, type, duration, vol=0.1) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playExplosion() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            // Резкое падение частоты для звука взрыва/срыва
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1, audioCtx.currentTime + 1.5);
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 1.5);
+        }
+
+        // --- GAME FLOW ---
+        function showMenu() {
+            document.getElementById('game-over-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'none';
+            document.getElementById('menu-screen').style.display = 'flex';
+        }
+
+        function initGame(difficulty) {
+            initAudio();
+            currentDiff = config[difficulty];
+            timeLeft = currentDiff.time;
+            currentStage = 1;
+            
+            // Сброс всего
+            codeSolved = false; currentCode = "";
+            switchesSolved = false; currentSwitchStep = 0;
+            wiresSolved = false;
+            simonSolved = false; simonPlayerStep = 0; isSimonPlaying = false;
+            finalSolved = false; holdValue = 0; isHolding = false;
+
+            document.querySelectorAll('.status-led').forEach(led => led.className = 'status-led');
+            document.getElementById('wire-hint').innerText = "ДАННЫЕ ЗАШИФРОВАНЫ";
+            document.getElementById('wire-hint').style.color = "#555";
+            document.getElementById('stages-wrapper').style.transform = 'translateY(0)';
+            updateKeypadDisplay();
+
+            generateModules();
+
+            document.getElementById('menu-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'flex';
+            
+            isActive = true;
+            timerInterval = setInterval(updateTimer, 50);
+        }
+
+        function generateModules() {
+            // Stage 1: Math
+            let a = Math.floor(Math.random() * currentDiff.mathMax) + 10;
+            let b = Math.floor(Math.random() * currentDiff.mathMax) + 10;
+            let op = Math.random() > 0.5 ? '+' : '-';
+            let ans = op === '+' ? a + b : a - b;
+            if (ans < 100) ans += 100;
+            if (ans > 999) ans = 999;
+            targetCode = ans.toString();
+            document.getElementById('math-task').innerText = `Уравнение: ${ans - (op === '+' ? b : -b)} ${op} ${b} = ?`;
+
+            // Stage 1: Switches
+            const swContainer = document.getElementById('switches-container');
+            swContainer.innerHTML = '';
+            switchSequence = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            for(let i=0; i<4; i++) {
+                swContainer.innerHTML += `<div class="switch" id="sw-${i}" onclick="handleSwitch(${i})"><div class="switch-toggle"></div></div>`;
+            }
+
+            // Stage 1: Wires
+            const wrContainer = document.getElementById('wires-container');
+            wrContainer.innerHTML = '';
+            activeWires = [...wireColors].sort(() => Math.random() - 0.5).slice(0, currentDiff.wires);
+            safeWireId = activeWires[Math.floor(Math.random() * activeWires.length)].id;
+            activeWires.forEach(w => {
+                wrContainer.innerHTML += `<div class="wire" id="wire-${w.id}" style="background: ${w.color};" onclick="cutWire('${w.id}')"></div>`;
+            });
+
+            // Stage 2: Simon
+            simonSequence = [];
+            for(let i=0; i<currentDiff.simonSteps; i++) simonSequence.push(Math.floor(Math.random() * 4));
+            
+            // Stage 2: Final Button Event Listeners (создаем один раз)
+            const fBtn = document.getElementById('final-button');
+            fBtn.onmousedown = fBtn.ontouchstart = startHold;
+            fBtn.onmouseup = fBtn.ontouchend = endHold;
+            fBtn.onmouseleave = fBtn.ontouchcancel = () => { if(isHolding) endHold(); };
+        }
+
+        function updateTimer() {
+            if (!isActive) return;
+            timeLeft -= 0.05;
+            
+            if (timeLeft <= 0) {
+                timeLeft = 0;
+                gameOver(false, "Время вышло!");
+            }
+let tickRate = timeLeft < 10 ? 10 : 20;
+            if (Math.floor(timeLeft * 20) % tickRate === 0) {
+                playTone(600 + (60 - timeLeft)*10, 'square', 0.05, 0.03);
+                if(timeLeft < 10) tg.HapticFeedback.impactOccurred('light');
+            }
+
+            const tDisp = document.getElementById('timer-display');
+            tDisp.innerText = timeLeft.toFixed(2).padStart(5, '0');
+            if(timeLeft < 10) tDisp.style.color = (Math.floor(timeLeft*10)%2===0) ? "#fff" : "var(--danger)";
+            else tDisp.style.color = "var(--danger)";
+        }
+
+        function penaltyTime(seconds) {
+            if(!isActive) return;
+            timeLeft = Math.max(0, timeLeft - seconds);
+            tg.HapticFeedback.notificationOccurred('error');
+            playTone(150, 'sawtooth', 0.4, 0.3);
+            
+            const gameScreen = document.getElementById('game-screen');
+            gameScreen.classList.remove('shake');
+            void gameScreen.offsetWidth;
+            gameScreen.classList.add('shake');
+            
+            document.getElementById('timer-display').style.background = "#500";
+            setTimeout(() => document.getElementById('timer-display').style.background = "#000", 300);
+        }
+
+        function checkWin() {
+            if (!isActive) return;
+
+            if (currentStage === 1 && wiresSolved && codeSolved && switchesSolved) {
+                // Переход на этап 2
+                currentStage = 2;
+                timeLeft += 15; // Бонусное время
+                tg.HapticFeedback.notificationOccurred('success');
+                playTone(400, 'sine', 0.2); setTimeout(() => playTone(600, 'sine', 0.4), 200);
+                
+                document.getElementById('stages-wrapper').style.transform = 'translateY(-100%)';
+                document.getElementById('timer-display').style.color = "var(--success)";
+            } 
+            else if (currentStage === 2 && simonSolved && finalSolved) {
+                // Полная победа
+                gameOver(true, "БОМБА ПОЛНОСТЬЮ ОБЕЗВРЕЖЕНА!");
+            }
+        }
+
+        // --- STAGE 1 LOGIC ---
+        function pressKey(num) {
+            if (!isActive || codeSolved || currentStage !== 1) return;
+            tg.HapticFeedback.impactOccurred('light');
+            playTone(1200, 'sine', 0.1);
+            
+            if (currentCode.length < 3) currentCode += num;
+            updateKeypadDisplay();
+
+            if (currentCode.length === 3) {
+                if (currentCode === targetCode) {
+                    codeSolved = true;
+                    document.getElementById('keypad-screen').style.color = "var(--success)";
+                    document.getElementById('led-code').classList.add('on');
+                    checkModuleUnlock();
+                } else {
+                    document.getElementById('keypad-screen').style.color = "var(--danger)";
+                    penaltyTime(5);
+                    setTimeout(clearKeypad, 400);
+                }
+            }
+        }
+
+        function clearKeypad() {
+            if(codeSolved) return;
+            currentCode = "";
+            document.getElementById('keypad-screen').style.color = "#fff";
+            updateKeypadDisplay();
+        }
+
+        function updateKeypadDisplay() { document.getElementById('keypad-screen').innerText = currentCode.padEnd(3, '-'); }
+
+        function handleSwitch(index) {
+            if (!isActive || switchesSolved || currentStage !== 1) return;
+            const swEl = document.getElementById(`sw-${index}`);
+            if (swEl.classList.contains('on')) return;
+
+            tg.HapticFeedback.impactOccurred('medium');
+            if (switchSequence[currentSwitchStep] === index) {
+                swEl.classList.add('on');
+                playTone(600 + (currentSwitchStep * 200), 'sine', 0.1);
+                currentSwitchStep++;
+                if (currentSwitchStep === 4) {
+                    switchesSolved = true;
+                    document.getElementById('led-switches').classList.add('on');
+                    checkModuleUnlock();
+                }
+            } else {
+                penaltyTime(2);
+                currentSwitchStep = 0;
+                document.querySelectorAll('.switch').forEach(s => s.classList.remove('on'));
+            }
+        }
+
+        function checkModuleUnlock() {
+            if (codeSolved && switchesSolved) {
+                const safeColorName = activeWires.find(w => w.id === safeWireId).name;
+                const hint = document.getElementById('wire-hint');
+                hint.innerText = `РЕЖЬ ${safeColorName} ПРОВОД!`;
+                hint.style.color = "var(--success)";
+                playTone(800, 'sine', 0.5, 0.1);
+            }
+        }
+
+        function cutWire(id) {
+            if (!isActive || wiresSolved || currentStage !== 1) return;
+            const wireEl = document.getElementById(`wire-${id}`);
+            if (wireEl.classList.contains('cut')) return;
+
+            wireEl.classList.add('cut');
+            tg.HapticFeedback.impactOccurred('heavy');
+
+            if (id === safeWireId && codeSolved && switchesSolved) {
+                wiresSolved = true;
+                document.getElementById('led-wires').classList.add('on');
+                checkWin();
+            } else {
+                gameOver(false, "ОШИБКА ДЕТОНАЦИИ: Неверный провод или обход защиты!");
+            }
+        }
+
+        // --- STAGE 2 LOGIC ---
+        function playSimonSequence() {
+            if (!isActive || simonSolved || isSimonPlaying || currentStage !== 2) return;
+            isSimonPlaying = true;
+            simonPlayerStep = 0;
+            document.getElementById('btn-play-simon').innerText = "ЗАПОМИНАЙ...";
+            
+            let step = 0;
+            let seqInt = setInterval(() => {
+                if(step >= simonSequence.length) {
+                    clearInterval(seqInt);
+                    isSimonPlaying = false;
+                    document.getElementById('btn-play-simon').innerText = "ПОВТОРЯЙ";
+                    return;
+                }
+                let colorIdx = simonSequence[step];
+                let btn = document.getElementById(`sm-${colorIdx}`);
+                btn.classList.add('active');
+                playTone(300 + (colorIdx*150), 'triangle', 0.3);
+                setTimeout(() => btn.classList.remove('active'), 300);
+                step++;
+            }, 600);
+        }
+
+        function pressSimon(idx) {
+            if (!isActive || simonSolved || isSimonPlaying || currentStage !== 2) return;
+            
+            playTone(300 + (idx*150), 'triangle', 0.1);
+            tg.HapticFeedback.impactOccurred('light');
+
+            if (idx === simonSequence[simonPlayerStep]) {
+                simonPlayerStep++;
+                if (simonPlayerStep === simonSequence.length) {
+                    simonSolved = true;
+                    document.getElementById('led-simon').classList.add('on');
+                    document.getElementById('btn-play-simon').innerText = "ВЗЛОМАНО";
+                    document.getElementById('btn-play-simon').style.borderColor = "var(--success)";
+                    document.getElementById('btn-play-simon').style.color = "var(--success)";
+                    checkWin();
+                }
+            } else {
+                penaltyTime(3);
+                simonPlayerStep = 0;
+                document.getElementById('btn-play-simon').innerText = "ОШИБКА! ЗАНОВО";
+            }
+        }
+
+        // Final Button (Hold)
+        function startHold(e) {
+            if(e) e.preventDefault(); // Предотвращение двойного срабатывания на тачскринах
+            if(!isActive || finalSolved || !simonSolved || currentStage !== 2) return;
+            
+            isHolding = true;
+            holdValue = 0;
+            tg.HapticFeedback.impactOccurred('medium');
+            document.getElementById('final-button').style.transform = "translateY(5px)";
+            
+            holdTimer = setInterval(() => {
+                holdValue += 2; // +2% каждые 50мс
+                if(holdValue > 100) holdValue = 0;
+                
+                const prog = document.getElementById('hold-progress');
+                prog.style.width = holdValue + "%";
+                
+                // Целевая зеленая зона: от 75% до 90%
+                if(holdValue >= 75 && holdValue <= 90) {
+                    prog.style.backgroundColor = "var(--success)";
+                } else if(holdValue > 90) {
+                    prog.style.backgroundColor = "var(--danger)";
+                } else {
+                    prog.style.backgroundColor = "var(--warning)";
+                }
+            }, 50);
+        }
+
+        function endHold(e) {
+            if(e) e.preventDefault();
+            if(!isHolding || !isActive) return;
+            isHolding = false;
+            clearInterval(holdTimer);
+            document.getElementById('final-button').style.transform = "translateY(0)";
+            document.getElementById('hold-progress').style.width = "0%";
+
+            // Проверка попадания в зону (75-90)
+            if(holdValue >= 75 && holdValue <= 90) {
+                finalSolved = true;
+                document.getElementById('led-final').classList.add('on');
+                checkWin();
+            } else {
+                penaltyTime(5);
+            }
+        }
+
+        // --- END GAME ---
+        function gameOver(isWin, reason) {
+            isActive = false;
+            clearInterval(timerInterval);
+            
+            const screen = document.getElementById('game-over-screen');
+            const title = document.getElementById('result-title');
+            const desc = document.getElementById('result-desc');
+            
+            screen.style.display = 'flex';
+            desc.innerText = reason;
+
+            if (isWin) {
+                title.innerText = "ОБЕЗВРЕЖЕНО";
+                title.style.color = "var(--success)";
+                title.style.textShadow = "0 0 20px var(--success-glow)";
+                tg.HapticFeedback.notificationOccurred('success');
+                playTone(400, 'square', 0.2); setTimeout(() => playTone(600, 'square', 0.4), 250);
+            } else {
+                title.innerText = "ВЗРЫВ!";
+                title.style.color = "var(--danger)";
+                title.style.textShadow = "0 0 20px var(--danger-glow)";
+                tg.HapticFeedback.notificationOccurred('error');
+                playExplosion();
+            }
+        }
+    </script>
+</body>
+</html>
